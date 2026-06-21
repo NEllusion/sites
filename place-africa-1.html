@@ -29,7 +29,7 @@
   .prompt .eyebrow{font-family:ui-monospace,"SF Mono",Menlo,monospace;font-size:11px;letter-spacing:.34em;color:var(--guess);text-transform:uppercase;}
   .prompt h1{margin:6px 0 0;font-size:clamp(28px,8vw,40px);line-height:1.04;font-weight:700;letter-spacing:-.01em;}
   .map-wrap{position:relative;border:1px solid var(--grat);border-radius:12px;overflow:hidden;}
-  svg#map{display:block;width:100%;height:auto;touch-action:manipulation;cursor:crosshair;background:#0E2932;}
+  svg#map{display:block;width:100%;height:auto;touch-action:none;cursor:crosshair;background:#0E2932;}
   svg#map.locked{cursor:default;}
   .hint{position:absolute;left:50%;bottom:10px;transform:translateX(-50%);font-family:ui-monospace,Menlo,monospace;
     font-size:11px;letter-spacing:.04em;color:var(--muted);background:rgba(11,32,39,.72);padding:5px 12px;border-radius:99px;
@@ -110,6 +110,28 @@
   var svg=document.getElementById("map");
   var NS="http://www.w3.org/2000/svg";
   function el(t,a){var e=document.createElementNS(NS,t);if(a)for(var k in a)e.setAttribute(k,a[k]);return e;}
+
+  // ---- map-only zoom/pan: mutate the SVG viewBox so getScreenCTM() (used by the
+  //      guess handler) stays correct at any zoom level, no scoring changes needed ----
+  var ASPECT=H/W, MIN_W=W/8;                 // up to ~8x zoom-in
+  var view={x:0,y:0,w:W,h:H};
+  function applyView(){ svg.setAttribute("viewBox", view.x+" "+view.y+" "+view.w+" "+view.h); }
+  function clampView(){
+    view.w=Math.max(MIN_W,Math.min(W,view.w)); view.h=view.w*ASPECT;
+    view.x=Math.max(0,Math.min(W-view.w,view.x));
+    view.y=Math.max(0,Math.min(H-view.h,view.y));
+  }
+  function resetView(){ view={x:0,y:0,w:W,h:H}; applyView(); }
+  function screenToMap(cx,cy){
+    var p=svg.createSVGPoint(); p.x=cx; p.y=cy;
+    var l=p.matrixTransform(svg.getScreenCTM().inverse()); return [l.x,l.y];
+  }
+  function zoomAt(fx,fy,factor){
+    var newW=Math.max(MIN_W,Math.min(W,view.w*factor)), newH=newW*ASPECT;
+    view.x=fx-(fx-view.x)*(newW/view.w);
+    view.y=fy-(fy-view.y)*(newH/view.h);
+    view.w=newW; view.h=newH; clampView(); applyView();
+  }
 
   // bounding box of the view (lon/lat)
   var lonMin=-26,lonMax=60,latMin=-37,latMax=40;
@@ -370,7 +392,7 @@
   }
   function nextRound(){
     answered=false; clearFx(); $("result").hidden=true; $("next").hidden=true;
-    $("hint").style.display=""; svg.classList.remove("locked");
+    $("hint").style.display=""; svg.classList.remove("locked"); resetView();
     current=queue[idx]; $("country").textContent=current.n; $("roundNum").textContent=(idx+1)+" / "+ROUNDS;
   }
   function clearFx(){ while(fx.firstChild) fx.removeChild(fx.firstChild); }
@@ -408,9 +430,65 @@
     $("finalScore").textContent=total.toLocaleString(); $("finalMax").textContent=(ROUNDS*1000).toLocaleString();
     $("grade").textContent=grade(total); $("final").hidden=false; clearFx();
   }
+  function initZoom(){
+    // wheel = zoom toward cursor (desktop)
+    svg.addEventListener("wheel",function(e){
+      e.preventDefault();
+      var f=screenToMap(e.clientX,e.clientY);
+      zoomAt(f[0],f[1], e.deltaY>0 ? 1.15 : 1/1.15);
+    },{passive:false});
+
+    // pointer gestures: 1 pointer = pan (or tap-to-guess), 2 pointers = pinch zoom
+    var pointers={}, moved=false, multi=false, last=null, start=null, pinchDist=0;
+    var TAP_PX=6;
+    function ids(){return Object.keys(pointers);}
+    function dist(a,b){return Math.hypot(a.x-b.x,a.y-b.y);}
+
+    svg.addEventListener("pointerdown",function(e){
+      svg.setPointerCapture(e.pointerId);
+      pointers[e.pointerId]={x:e.clientX,y:e.clientY};
+      var p=ids();
+      if(p.length===1){ moved=false; multi=false; start=last={x:e.clientX,y:e.clientY}; }
+      else if(p.length===2){ multi=true; pinchDist=dist(pointers[p[0]],pointers[p[1]]); last=null; }
+    });
+    svg.addEventListener("pointermove",function(e){
+      if(!pointers[e.pointerId]) return;
+      pointers[e.pointerId]={x:e.clientX,y:e.clientY};
+      var p=ids();
+      if(p.length>=2){
+        // pinch: zoom about the midpoint
+        var a=pointers[p[0]], b=pointers[p[1]], d=dist(a,b);
+        var f=screenToMap((a.x+b.x)/2,(a.y+b.y)/2);
+        if(pinchDist>0 && d>0) zoomAt(f[0],f[1], pinchDist/d);
+        pinchDist=d; moved=true;
+      } else if(last){
+        // single-pointer pan
+        var rect=svg.getBoundingClientRect();
+        view.x-=(e.clientX-last.x)*view.w/rect.width;
+        view.y-=(e.clientY-last.y)*view.h/rect.height;
+        clampView(); applyView();
+        last={x:e.clientX,y:e.clientY};
+        if(start && Math.hypot(e.clientX-start.x,e.clientY-start.y)>TAP_PX) moved=true;
+      }
+    });
+    function remove(e){
+      if(pointers[e.pointerId]) delete pointers[e.pointerId];
+      var p=ids();
+      if(p.length<2) pinchDist=0;
+      if(p.length===1){ last={x:pointers[p[0]].x,y:pointers[p[0]].y}; }
+      return p.length;
+    }
+    svg.addEventListener("pointerup",function(e){
+      var wasTap=(!multi && !moved);
+      if(remove(e)===0){ if(wasTap) handleGuess(e); last=start=null; moved=false; multi=false; }
+    });
+    svg.addEventListener("pointercancel",function(e){
+      if(remove(e)===0){ last=start=null; moved=false; multi=false; }
+    });
+  }
   function boot2(){
     if(started) return; started=true;
-    svg.addEventListener("click",handleGuess);
+    initZoom();
     $("next").addEventListener("click",function(){ idx++; if(idx>=ROUNDS) finish(); else nextRound(); });
     $("again").addEventListener("click",startGame);
     $("islands").addEventListener("change",startGame);
