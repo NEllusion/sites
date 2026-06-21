@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Africa — Topology</title>
+<title>Africa — Terrain</title>
 <style>
   :root{
     --ocean:#0B2027;--ocean-2:#0E2932;--grat:#244049;--ink:#F2EDE4;--muted:#7E9AA3;
@@ -29,7 +29,7 @@
   .prompt .eyebrow{font-family:ui-monospace,"SF Mono",Menlo,monospace;font-size:11px;letter-spacing:.34em;color:var(--guess);text-transform:uppercase;}
   .prompt h1{margin:6px 0 0;font-size:clamp(28px,8vw,40px);line-height:1.04;font-weight:700;letter-spacing:-.01em;}
   .map-wrap{position:relative;border:1px solid var(--grat);border-radius:12px;overflow:hidden;}
-  svg#map{display:block;width:100%;height:auto;touch-action:none;cursor:crosshair;background:#0E2932;}
+  svg#map{display:block;width:100%;height:auto;touch-action:none;cursor:crosshair;background:#08233a;}
   svg#map.locked{cursor:default;}
   .hint{position:absolute;left:50%;bottom:10px;transform:translateX(-50%);font-family:ui-monospace,Menlo,monospace;
     font-size:11px;letter-spacing:.04em;color:var(--muted);background:rgba(11,32,39,.72);padding:5px 12px;border-radius:99px;
@@ -168,7 +168,7 @@
     {code:678,n:"São Tomé and Príncipe",lat:0.2,lon:6.6,a:964,island:true}
   ];
 
-  // hand-traced coastline for the fallback base (lon,lat)
+  // hand-traced coastline for the approx fallback (lon,lat)
   var MAINLAND=[[-5.6,35.8],[0.0,36.5],[5.0,37.0],[10.5,37.0],[11.0,33.5],[15.0,31.5],[20.0,32.0],[25.0,32.0],[29.0,31.0],[31.5,31.4],[32.5,29.9],[34.0,28.0],[35.5,24.0],[37.0,22.0],[38.5,18.0],[39.5,15.5],[40.5,14.5],[43.3,12.7],[44.0,10.4],[48.0,11.0],[51.3,11.8],[50.0,8.0],[47.5,4.0],[44.0,1.5],[41.5,-1.5],[40.0,-3.0],[39.5,-6.5],[40.5,-10.5],[40.5,-14.5],[37.0,-17.5],[35.5,-20.0],[35.0,-23.5],[32.9,-25.9],[32.0,-28.5],[29.0,-31.5],[27.0,-33.3],[22.0,-34.0],[20.0,-34.8],[18.4,-34.0],[17.5,-32.5],[15.0,-27.0],[14.5,-22.5],[13.0,-18.0],[12.0,-17.0],[13.8,-12.5],[13.4,-8.8],[12.5,-6.0],[13.0,-4.8],[11.8,-3.0],[9.3,-0.6],[9.5,2.0],[9.7,4.0],[8.5,4.5],[6.0,4.3],[4.0,6.2],[1.0,6.0],[-1.0,5.0],[-3.5,5.0],[-7.5,4.3],[-9.0,5.0],[-11.5,6.5],[-13.5,9.5],[-15.5,11.5],[-16.5,13.5],[-17.5,14.7],[-16.5,16.0],[-16.5,19.0],[-17.0,21.0],[-15.5,24.0],[-13.5,27.5],[-10.0,30.0],[-9.3,32.5],[-6.8,34.0]];
   var MADAGASCAR=[[49.3,-12.0],[50.5,-15.5],[49.8,-18.5],[48.5,-21.5],[47.0,-24.5],[45.2,-25.6],[44.0,-22.0],[43.3,-19.0],[44.2,-16.0],[46.3,-15.7],[47.5,-13.5]];
 
@@ -176,28 +176,20 @@
   var ENG={ projectXY:null, invertXY:null, score:null, drawHighlight:null, centroidXY:null };
   var fx; // marker layer
 
-  // ---- shared helpers ----
-  function biome(lat){
-    if(lat>=34)return"#9fa15a"; if(lat>=30)return"#cdb87a"; if(lat>=20)return"#e6d6a4";
-    if(lat>=14)return"#cdbd7e"; if(lat>=8)return"#9fae5b"; if(lat>=2)return"#6f8e3f";
-    if(lat>=-4)return"#557a33"; if(lat>=-12)return"#7e9046"; if(lat>=-22)return"#b7a064";
-    if(lat>=-30)return"#c2a968"; return"#8c9a56";
-  }
-  function defsCommon(){
+  // ---- shared sea defs (ocean gradient + ripple shimmer) ----
+  function seaDefs(){
     var defs=el("defs",{});
     function grad(id,stops){var g=el("linearGradient",{id:id,x1:"0",y1:"0",x2:"0",y2:"1"});
       stops.forEach(function(s){g.appendChild(el("stop",{offset:s[0],"stop-color":s[1]}));});defs.appendChild(g);}
     grad("seaGrad",[["0","#0a3a55"],["0.5","#0b2f47"],["1","#08233a"]]);
-    function turb(id,bf,oct,seed,rgb,al){var f=el("filter",{id:id,x:"0",y:"0",width:"100%",height:"100%"});
-      f.appendChild(el("feTurbulence",{type:"fractalNoise",baseFrequency:bf,numOctaves:oct,seed:seed,stitchTiles:"stitch",result:"n"}));
-      f.appendChild(el("feColorMatrix",{"in":"n",type:"matrix",values:"0 0 0 0 "+rgb+"  0 0 0 0 "+rgb+"  0 0 0 0 "+rgb+"  "+al+" "+al+" "+al+" 0 0"}));
-      defs.appendChild(f);}
-    // terrain filter removed — ESRI topo image replaces the procedural land fill
-    turb("ripple","0.012 0.02","2","3","1","0.3");
+    var f=el("filter",{id:"ripple",x:"0",y:"0",width:"100%",height:"100%"});
+    f.appendChild(el("feTurbulence",{type:"fractalNoise",baseFrequency:"0.012 0.02",numOctaves:"2",seed:"3",stitchTiles:"stitch",result:"n"}));
+    f.appendChild(el("feColorMatrix",{"in":"n",type:"matrix",values:"0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0.3 0.3 0.3 0 0"}));
+    defs.appendChild(f);
     return defs;
   }
   function graticule(){
-    var g=el("g",{stroke:"#bfe0e8","stroke-width":"0.6",opacity:"0.16"});
+    var g=el("g",{stroke:"#bfe0e8","stroke-width":"0.6",opacity:"0.18"});
     for(var lon=-20;lon<=60;lon+=10){var a=ENG.projectXY(lon,latMax),b=ENG.projectXY(lon,latMin);g.appendChild(el("line",{x1:a[0],y1:a[1],x2:b[0],y2:b[1]}));}
     for(var lat=-30;lat<=40;lat+=10){var c=ENG.projectXY(lonMin,lat),d=ENG.projectXY(lonMax,lat);g.appendChild(el("line",{x1:c[0],y1:c[1],x2:d[0],y2:d[1]}));}
     return g;
@@ -226,16 +218,25 @@
     requestAnimationFrame(function(){line.setAttribute("stroke-dashoffset","0");});
   }
 
-  // ---- topo image: ESRI World Terrain Background in EPSG:4326, bbox-aligned to the game view ----
-  var TOPO_URL="https://server.arcgisonline.com/ArcGIS/rest/services/World_Terrain_Background/MapServer/export?bbox=-26,-37,60,40&bboxSR=4326&imageSR=4326&size=1240,1110&format=jpg&f=image";
-  function addTopoImage(fallbackFn){
-    var img=el("image",{x:0,y:0,width:W,height:H,href:TOPO_URL,preserveAspectRatio:"none"});
-    img.addEventListener("error",function(){
-      img.style.display="none";
-      if(fallbackFn) fallbackFn(img);
-    });
-    svg.appendChild(img);
-    return img;
+  // ---- ESRI World Terrain Background tiles at z=4 aligned to geoMercator ----
+  // Mercator tile math: all tiles at zoom z are equal-sized in SVG pixels.
+  // tileW = 2π·S / N  where S = projection.scale(), N = 2^z
+  // SVG top-left of tile(tx,ty): x = (tx/N - 0.5)·2π·S + T[0]  (same for y)
+  function loadTiles(S, T){
+    var Z=4, N=16, PW=2*Math.PI*S, TW=PW/N;
+    var xmin=Math.max(0,  Math.floor((0-T[0]+PW/2)/TW));
+    var xmax=Math.min(N-1,Math.floor((W-T[0]+PW/2)/TW));
+    var ymin=Math.max(0,  Math.floor((0-T[1]+PW/2)/TW));
+    var ymax=Math.min(N-1,Math.floor((H-T[1]+PW/2)/TW));
+    var g=el("g",{});
+    for(var ty=ymin;ty<=ymax;ty++){
+      for(var tx=xmin;tx<=xmax;tx++){
+        var ix=(tx/N-0.5)*PW+T[0], iy=(ty/N-0.5)*PW+T[1];
+        var url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Terrain_Background/MapServer/tile/"+Z+"/"+ty+"/"+tx;
+        g.appendChild(el("image",{x:ix,y:iy,width:TW,height:TW,href:url,preserveAspectRatio:"none"}));
+      }
+    }
+    return g;
   }
 
   // ======================= APPROX MODE (no network) =======================
@@ -268,39 +269,40 @@
   }
   function pathFromLL(pts){var d="";for(var i=0;i<pts.length;i++){var p=ENG.projectXY(pts[i][0],pts[i][1]);d+=(i?"L":"M")+p[0].toFixed(1)+" "+p[1].toFixed(1)+" ";}return d+"Z";}
   function drawBaseApprox(){
-    var defs=defsCommon();
-    // landGrad kept in defs for topo-image fallback use only
+    var defs=seaDefs();
     function grad(id,stops){var g=el("linearGradient",{id:id,x1:"0",y1:"0",x2:"0",y2:"1"});
       stops.forEach(function(s){g.appendChild(el("stop",{offset:s[0],"stop-color":s[1]}));});defs.appendChild(g);}
     grad("landGrad",[["0.00","#9fa15a"],["0.10","#d8c187"],["0.22","#e6d6a4"],["0.31","#cdbd7e"],["0.40","#9fae5b"],
       ["0.47","#6f8e3f"],["0.53","#557a33"],["0.63","#7e9046"],["0.76","#b7a064"],["0.86","#c2a968"],["1.00","#8c9a56"]]);
+    (function(){var f=el("filter",{id:"terrain",x:"0",y:"0",width:"100%",height:"100%"});
+      f.appendChild(el("feTurbulence",{type:"fractalNoise",baseFrequency:"0.018 0.026",numOctaves:"4",seed:"7",stitchTiles:"stitch",result:"n"}));
+      f.appendChild(el("feColorMatrix",{"in":"n",type:"matrix",values:"0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0.7 0.7 0.7 0 0"}));
+      defs.appendChild(f);})();
     var clip=el("clipPath",{id:"landClip"});
     clip.appendChild(el("path",{d:pathFromLL(MAINLAND)}));
     clip.appendChild(el("path",{d:pathFromLL(MADAGASCAR)}));
     defs.appendChild(clip);
     svg.appendChild(defs);
     svg.appendChild(el("rect",{x:0,y:0,width:W,height:H,fill:"url(#seaGrad)"}));
-    // topo image replaces the procedural land gradient; fallback reinserts the gradient
-    addTopoImage(function(img){
-      var land=el("g",{"clip-path":"url(#landClip)"});
-      land.appendChild(el("rect",{x:0,y:0,width:W,height:H,fill:"url(#landGrad)"}));
-      svg.insertBefore(land,img);
-    });
-    svg.appendChild(el("rect",{x:0,y:0,width:W,height:H,fill:"#fff",filter:"url(#ripple)",opacity:"0.04"}));
+    svg.appendChild(el("rect",{x:0,y:0,width:W,height:H,fill:"#fff",filter:"url(#ripple)",opacity:"0.06"}));
     svg.appendChild(graticule());
+    var land=el("g",{"clip-path":"url(#landClip)"});
+    land.appendChild(el("rect",{x:0,y:0,width:W,height:H,fill:"url(#landGrad)"}));
+    land.appendChild(el("rect",{x:0,y:0,width:W,height:H,fill:"#000",filter:"url(#terrain)",opacity:"0.5"}));
+    svg.appendChild(land);
     svg.appendChild(el("path",{d:pathFromLL(MAINLAND),fill:"none",stroke:"#3c3a22","stroke-width":"1.1",opacity:"0.7"}));
     svg.appendChild(el("path",{d:pathFromLL(MADAGASCAR),fill:"none",stroke:"#3c3a22","stroke-width":"1.1",opacity:"0.7"}));
     fx=el("g",{});svg.appendChild(fx);
   }
 
-  // ======================= REAL MODE (true outlines) =======================
+  // ======================= REAL MODE (true outlines + terrain tiles) =======================
   function initReal(data){
     var featByCode=data.byCode;
-    var projection=d3.geoEquirectangular().fitSize([W,H],{type:"Polygon",coordinates:[[[lonMin,latMax],[lonMax,latMax],[lonMax,latMin],[lonMin,latMin],[lonMin,latMax]]]});
+    // geoMercator keeps country borders pixel-aligned with Web Mercator tile imagery
+    var projection=d3.geoMercator().fitSize([W,H],{type:"Polygon",coordinates:[[[lonMin,latMax],[lonMax,latMax],[lonMax,latMin],[lonMin,latMin],[lonMin,latMax]]]});
     var geoPath=d3.geoPath(projection);
-    // attach feature to each country we have a polygon for
     AFRICA.forEach(function(c){ var f=featByCode[c.code]; if(f){ c.feat=f; c.cen=d3.geoCentroid(f);} });
-    var merged=topojson.merge(data.topo, data.geoms); // dissolve internal borders
+    var merged=topojson.merge(data.topo, data.geoms);
     ENG.projectXY=function(lon,lat){return projection([lon,lat]);};
     ENG.invertXY=function(x,y){return projection.invert([x,y]);};
     ENG.centroidXY=function(t){return projection(t.cen||[t.lon,t.lat]);};
@@ -313,7 +315,7 @@
       return best*6371;
     }
     ENG.score=function(lon,lat,t){
-      if(!t.feat){ // safety: fall back to area method if a polygon is missing
+      if(!t.feat){
         var d=haversine(lat,lon,t.lat,t.lon),rkm=Math.sqrt(t.a/Math.PI),e=Math.max(0,d-rkm);
         return {inside:d<=rkm,edgeKm:e,pts:d<=rkm?1000:Math.round(1000*Math.exp(-e/700))};
       }
@@ -333,24 +335,21 @@
       var ly=(b[0][1]-9)<14?(b[1][1]+20):(b[0][1]-9);
       return {x:(b[0][0]+b[1][0])/2, y:y, labelY:ly};
     };
-    drawBaseReal(geoPath, merged);
+    drawBaseReal(geoPath, merged, projection.scale(), projection.translate());
     setMode("real");
     boot2();
   }
-  function drawBaseReal(geoPath, merged){
-    var defs=defsCommon();
-    var landD=geoPath(merged);
-    // landGrad and landClip removed — topo image replaces the procedural fill
+  function drawBaseReal(geoPath, merged, S, T){
+    var defs=seaDefs();
     svg.appendChild(defs);
     svg.appendChild(el("rect",{x:0,y:0,width:W,height:H,fill:"url(#seaGrad)"}));
-    // topo image; fallback inserts a flat land-colored path using the real merged outline
-    addTopoImage(function(img){
-      svg.insertBefore(el("path",{d:landD,fill:"#c9b97e","fill-opacity":"0.9"}),img);
-    });
-    svg.appendChild(el("rect",{x:0,y:0,width:W,height:H,fill:"#fff",filter:"url(#ripple)",opacity:"0.04"}));
+    // terrain tiles (ESRI World Terrain Background, z=4, Mercator-aligned)
+    svg.appendChild(loadTiles(S, T));
+    // subtle shimmer over ocean areas
+    svg.appendChild(el("rect",{x:0,y:0,width:W,height:H,fill:"#fff",filter:"url(#ripple)",opacity:"0.03"}));
     svg.appendChild(graticule());
-    // continent silhouette only — no internal borders shown before the click
-    svg.appendChild(el("path",{d:landD,fill:"none",stroke:"#3c3a22","stroke-width":"1.0","stroke-opacity":"0.6","stroke-linejoin":"round"}));
+    // continent silhouette stroke for a clean coastline edge over the tile imagery
+    svg.appendChild(el("path",{d:geoPath(merged),fill:"none",stroke:"rgba(0,0,0,0.4)","stroke-width":"1.2","stroke-linejoin":"round"}));
     fx=el("g",{});svg.appendChild(fx);
   }
 
@@ -358,8 +357,8 @@
   function setMode(mode){
     var dot=$("mode").querySelector(".dot"), txt=$("modeText");
     dot.className="dot "+mode;
-    if(mode==="real"){txt.textContent="Terrain: topographic map · click inside a country border for full points";}
-    else{txt.textContent="Borders: approximate area — map data could not load, showing estimated country sizes";}
+    if(mode==="real"){txt.textContent="Terrain: real topographic map — borders revealed on click";}
+    else{txt.textContent="Terrain: approximate (map data unavailable) — showing estimated country areas";}
   }
   function loadScript(url){return new Promise(function(res,rej){var s=document.createElement("script");s.src=url;s.onload=res;s.onerror=function(){rej(new Error("load "+url));};document.head.appendChild(s);});}
   function tryReal(){
@@ -393,7 +392,7 @@
     var inc=$("islands").checked;
     return AFRICA.filter(function(c){
       if(c.island&&!inc) return false;
-      if(ENG._real && !c.feat && c.island) return false; // island polygon absent at this resolution
+      if(ENG._real && !c.feat && c.island) return false;
       return true;
     });
   }
@@ -443,14 +442,12 @@
     $("grade").textContent=grade(total); $("final").hidden=false; clearFx();
   }
   function initZoom(){
-    // wheel = zoom toward cursor (desktop)
     svg.addEventListener("wheel",function(e){
       e.preventDefault();
       var f=screenToMap(e.clientX,e.clientY);
       zoomAt(f[0],f[1], e.deltaY>0 ? 1.15 : 1/1.15);
     },{passive:false});
 
-    // pointer gestures: 1 pointer = pan (or tap-to-guess), 2 pointers = pinch zoom
     var pointers={}, moved=false, multi=false, last=null, start=null, pinchDist=0;
     var TAP_PX=6;
     function ids(){return Object.keys(pointers);}
@@ -468,13 +465,11 @@
       pointers[e.pointerId]={x:e.clientX,y:e.clientY};
       var p=ids();
       if(p.length>=2){
-        // pinch: zoom about the midpoint
         var a=pointers[p[0]], b=pointers[p[1]], d=dist(a,b);
         var f=screenToMap((a.x+b.x)/2,(a.y+b.y)/2);
         if(pinchDist>0 && d>0) zoomAt(f[0],f[1], pinchDist/d);
         pinchDist=d; moved=true;
       } else if(last){
-        // single-pointer pan
         var rect=svg.getBoundingClientRect();
         view.x-=(e.clientX-last.x)*view.w/rect.width;
         view.y-=(e.clientY-last.y)*view.h/rect.height;
@@ -506,7 +501,6 @@
     $("islands").addEventListener("change",startGame);
     startGame();
   }
-  // mark real mode flag for pool()
   var _initReal=initReal; initReal=function(b){ ENG._real=true; _initReal(b); };
 })();
 </script>
